@@ -1,15 +1,42 @@
 import os
-import SimpleHTTPServer
-import SocketServer
+from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+import json
+import dicom
+import datetime
 
-# Read port selected by the cloud for our application
-PORT = int(os.getenv('VCAP_APP_PORT', 8000))
-# Use Simple Handler to serve all files in the current directory
-Handler = SimpleHTTPServer.SimpleHTTPRequestHandler
-# Change current directory to avoid exposure of control files
-os.chdir('static')
+class MyDate():
+    def get(self):
+        return ['date', datetime.date.today().isoformat()]
+    
+class MyFile():
+    def get(self):
+        data = dicom.read_file("IM-0001-0069.dcm")
+        return ['PatientName', getattr(data, "PatientName")]
+    
+class MyRequestHandler (BaseHTTPRequestHandler):
+    def route(self):
+        return {
+                '/dates': MyDate(),
+                '/files': MyFile(),
+        }.get(self.path, None)
+    
+    def do_GET(self):
+        model = self.route()
+        
+        if model is not None:
+            self.send_response(200)
+            self.send_header("Content-type:", "application/json")
+            self.end_headers()
+            
+            self.wfile.write(json.dumps(model.get()))
+        else:
+            self.send_error(404, "Not found")
 
-httpd = SocketServer.TCPServer(("", PORT), Handler)
+PORT = 8000
+ROOT = '/home/ubuntu/dicomapp/'
+os.chdir(ROOT + 'static')
+
+httpd = HTTPServer(("", PORT), MyRequestHandler)
 try:
   print("Start serving at port %i" % PORT)
   httpd.serve_forever()
